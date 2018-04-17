@@ -24,30 +24,35 @@ def img2wav(img_path, wav_path, fft_size=1024):
 
     # 转为numpy数组
     img = np.array(img, 'float')
-    # 变换到-100~0分贝，太大了转到时域时可能会溢出
+    # 变换到-100~0分贝
     img = img * (100 / 255) - 100
-    # 单位从分贝转成1
-    # amp_dB = 20 * ln(amp / 32767) / ln(10)
-    # amp = exp(amp_dB / 20 * ln(10)) * 32767
-    img = np.exp(img * (np.log(10) / 20)) * 32767
+    # 单位从分贝转成1，此时取值为0~1
+    # amp_dB = 20 * ln(amp) / ln(10)
+    # amp = exp(amp_dB / 20 * ln(10))
+    img = np.exp(img * (np.log(10) / 20))
     # 翻转（索引小的频率小）然后转置（要迭代列）
     img = img[::-1].T
+
+    # 防溢出，每列总振幅不能超过1
+    max_sum = max(col.sum() for col in img)
+    if max_sum > 1:
+        img /= max_sum
 
     with wave.open(wav_path, 'wb') as f:
         # (nchannels, sampwidth, framerate, nframes, comptype, compname)
         f.setparams((1, 2, 44100, len(img) * fft_size, 'NONE', ''))
         for col in img:
             # 傅里叶反变换
-            data = np.fft.ifft(col, fft_size).real
+            data = np.fft.ifft(col * fft_size, fft_size).real * 32767
 
-            # 限制范围在-32768~32767
+            # 最后一次防溢出，限制范围在-32768~32767
             for index in np.where(data < -32768):
                 data[index] = -32768
             for index in np.where(data > 32767):
                 data[index] = 32767
-            data = data.astype('short')
 
             # 写到wav文件
+            data = data.astype('short')
             f.writeframesraw(data)
 
 
